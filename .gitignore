@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+*.log
+*.tgz
+.tmp/
+pi-codebuddy-debug.jsonl
