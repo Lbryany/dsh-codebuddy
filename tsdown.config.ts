@@ -7,7 +7,6 @@ export default defineConfig({
   target: 'node22.19',
   dts: true,
   clean: true,
-  sourcemap: true,
   deps: {
     neverBundle: [
       '@deepseek-ai/cordis',

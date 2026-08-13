@@ -7,4 +7,3 @@ declare const CREDENTIAL_REF: import("@deepseek-ai/dsh-credentials").CredentialR
 declare function apply(ctx: Context): void;
 //#endregion
 export { CREDENTIAL_REF, PROVIDER, apply, inject, name };
-//# sourceMappingURL=index.d.mts.map
