@@ -39,7 +39,7 @@ dsh web
 - `global` / `intl` 或留空：`https://www.codebuddy.ai`
 - 也可以传入完整的 `http(s)` 站点 URL
 
-浏览器授权成功后，模型选择器会出现 `CodeBuddy` 分类、当前账号的模型列表和可选推理等级。
+命令会直接显示授权 URL；请点击该 URL（或复制到本地浏览器）完成授权。这个流程不依赖服务器上的 Chrome，因此也适用于无头或远程环境。授权成功后，模型选择器会出现 `CodeBuddy` 分类、当前账号的模型列表和可选推理等级。
 
 ## 从源码构建安装
 
@@ -49,7 +49,7 @@ cd dsh-codebuddy
 npm ci
 npm run check
 npm pack --ignore-scripts
-dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.1.tgz
+dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.2.tgz
 dsh web
 ```
 

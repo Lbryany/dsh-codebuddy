@@ -1,11 +1,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { createModels, type AuthInteraction } from '@earendil-works/pi-ai'
-import { execFile } from 'node:child_process'
+import { createModels } from '@earendil-works/pi-ai'
 import { createCodeBuddyProvider, DEFAULT_SITE_ROOT } from './codebuddy.ts'
 import { CodeBuddyAdapter } from './adapter.ts'
 import { DshCredentialStore } from './credential-store.ts'
+import { authorizationUrlText, CodeBuddyLoginManager } from './login.ts'
 
 export const name = 'llm-codebuddy'
 export const inject = ['llm', 'commands', 'credentials']
@@ -21,21 +21,12 @@ function normalizeSite(raw: string): string {
   return url.origin
 }
 
-function openExternal(url: string): void {
-  const target = process.platform === 'win32'
-    ? { file: 'rundll32.exe', args: ['url.dll,FileProtocolHandler', url] }
-    : process.platform === 'darwin'
-      ? { file: 'open', args: [url] }
-      : { file: 'xdg-open', args: [url] }
-  const child = execFile(target.file, target.args, { windowsHide: true }, () => {})
-  child.unref()
-}
-
 export function apply(ctx: Context): void {
   const store = new DshCredentialStore(ctx.credentials, CREDENTIAL_REF)
   const models = createModels({ credentials: store })
   models.setProvider(createCodeBuddyProvider())
   const registration = ctx.llm.registerAdapter([PROVIDER], new CodeBuddyAdapter(models))
+  const loginManager = new CodeBuddyLoginManager(models, registration, ctx.logger, PROVIDER)
 
   ctx.commands.register({
     name: 'codebuddy-login',
@@ -43,28 +34,10 @@ export function apply(ctx: Context): void {
     input: { hint: '[cn|global|site URL]' },
     handler: async ({ rawInput, signal }: CommandInvocation) => {
       const site = normalizeSite(rawInput)
-      const interaction: AuthInteraction = {
-        signal,
-        prompt: async () => site,
-        notify: (event) => {
-          if (event.type === 'auth_url') {
-            ctx.logger.info('CodeBuddy authorization URL: %s', event.url)
-            openExternal(event.url)
-          }
-        },
-      }
-      const login = models.login(PROVIDER, 'oauth', interaction)
-      // dsh only renders a command after it settles, so open the authorization
-      // URL immediately and also log it for headless hosts.
-      const credential = await login
-      const refresh = await models.refresh({ allowNetwork: true, force: true, signal })
-      const error = refresh.errors.get(PROVIDER)
-      if (error !== undefined) throw error
-      registration.replace([PROVIDER])
-      const available = models.getModels(PROVIDER)
+      const login = await loginManager.start(site, signal)
       return {
         kind: 'success',
-        text: `CodeBuddy 登录成功（${String(credential.type === 'oauth' ? credential.baseUrl ?? site : site)}）\n已加载 ${available.length} 个模型：\n${available.map(model => `- ${model.name}`).join('\n')}`,
+        text: authorizationUrlText(login.authorizationUrl, login.reused),
       }
     },
   })
@@ -73,6 +46,13 @@ export function apply(ctx: Context): void {
     name: 'codebuddy-status',
     description: '查看 CodeBuddy 登录状态和模型列表',
     handler: async ({ signal }: CommandInvocation) => {
+      const pending = loginManager.pending()
+      if (pending !== undefined) {
+        const detail = pending.authorizationUrl === undefined
+          ? 'CodeBuddy 正在生成授权链接，请稍后再次查看。'
+          : authorizationUrlText(pending.authorizationUrl, true)
+        return { kind: 'success', text: detail }
+      }
       const credential = await store.read(PROVIDER)
       if (credential === undefined) return { kind: 'success', text: 'CodeBuddy 未登录。运行 /codebuddy-login cn 或 /codebuddy-login global。' }
       const result = await models.refresh({ allowNetwork: true, signal })
@@ -87,6 +67,7 @@ export function apply(ctx: Context): void {
     name: 'codebuddy-logout',
     description: '退出 CodeBuddy 并移除本地凭据',
     handler: async () => {
+      await loginManager.cancel()
       await models.logout(PROVIDER)
       registration.replace([PROVIDER])
       return { kind: 'success', text: 'CodeBuddy 已退出。' }
