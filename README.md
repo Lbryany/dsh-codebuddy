@@ -13,7 +13,7 @@
 
 ## 前置要求
 
-- DeepSeek Harness `0.1.0-rc.6`
+- DeepSeek Harness `0.1.6-alpha.2`
 - Node.js `22.19+` 或 `24+`
 
 ## 从 GitHub 安装
@@ -26,6 +26,23 @@ dsh web
 ```
 
 如果 Web 应用使用自定义 profile，请将 `web` 换成该 profile 名称，并使用 `dsh --profile <name>` 启动。
+
+### DSH 0.1.6 的 pnpm 安全策略
+
+`@earendil-works/pi-ai` 的传递依赖包含两个安装脚本，但 CodeBuddy 的 OpenAI 兼容路径不需要运行它们。若安装时出现 `ERR_PNPM_IGNORED_BUILDS`，请在 `$DSH_HOME/profiles/web/pnpm-workspace.yaml` 中把 DSH 自动生成的占位值改为：
+
+```yaml
+allowBuilds:
+  '@google/genai': false
+  protobufjs: false
+```
+
+如果文件里已有 `allowBuilds`，请合并这两项而不是重复该键。首次失败的安装可能已经写入依赖但尚未激活 bundle；修改后先移除再重新安装：
+
+```sh
+dsh plugin --profile web remove @lbryany/dsh-codebuddy
+dsh plugin --profile web add github:Lbryany/dsh-codebuddy
+```
 
 在 dsh 输入框执行：
 
@@ -49,7 +66,7 @@ cd dsh-codebuddy
 npm ci
 npm run check
 npm pack --ignore-scripts
-dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.2.tgz
+dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.3.tgz
 dsh web
 ```
 

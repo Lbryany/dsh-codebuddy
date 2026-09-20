@@ -1,8 +1,8 @@
 import {
-  CallId,
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
+  ToolCallId,
   attributionHeaders,
   type ContentBlock,
   type GenerateOptions,
@@ -177,17 +177,20 @@ export class CodeBuddyAdapter extends LlmAdapter {
         const partial = event.partial.content[event.contentIndex]
         const id = partial?.type === 'toolCall' ? partial.id : ''
         const name = partial?.type === 'toolCall' ? partial.name : undefined
-        yield { type: 'tool-call-delta', index: event.contentIndex, id: CallId(id), name, argumentsDelta: event.delta }
+        yield { type: 'tool-call-delta', index: event.contentIndex, id: ToolCallId(id), name, argumentsDelta: event.delta }
       } else if (event.type === 'text_end') {
         yield { type: 'block-end', index: event.contentIndex, block: { type: 'text', text: event.content } }
       } else if (event.type === 'thinking_end') {
         yield { type: 'block-end', index: event.contentIndex, block: { type: 'reasoning', text: event.content } }
       } else if (event.type === 'toolcall_end') {
         yield { type: 'block-end', index: event.contentIndex, block: {
-          type: 'tool-call', id: CallId(event.toolCall.id), name: event.toolCall.name,
+          type: 'tool-call', id: ToolCallId(event.toolCall.id), name: event.toolCall.name,
           arguments: JSON.stringify(event.toolCall.arguments),
         } }
       } else if (event.type === 'done') {
+        if (event.reason === 'deferred') {
+          throw new LlmError('CodeBuddy returned a deferred tool response, which DSH cannot consume', 'UNSUPPORTED')
+        }
         yield { type: 'usage', usage: {
           inputTokens: event.message.usage.input,
           outputTokens: event.message.usage.output,

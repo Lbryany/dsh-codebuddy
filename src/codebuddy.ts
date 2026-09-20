@@ -8,13 +8,13 @@ import {
   type Api,
   type AssistantMessage,
   type AssistantMessageEventStream,
-  type AuthInteraction,
   type Credential,
   type Model,
   type ModelAuth,
   type OAuthAuth,
   type OAuthCredential,
   type Provider,
+  type ProviderAuthInteraction,
   type ProviderStreams,
   type RefreshModelsContext,
   type StreamOptions,
@@ -1397,7 +1397,9 @@ export function createCodeBuddyOAuth(
 ): OAuthAuth {
   const runtime = makeRuntime(options);
 
-  const login = async (interaction: AuthInteraction): Promise<OAuthCredential> => {
+  const login = async (
+    interaction: ProviderAuthInteraction,
+  ): Promise<OAuthCredential> => {
     throwIfAborted(interaction.signal);
     const input = await interaction.prompt({
       type: "text",
@@ -1456,7 +1458,7 @@ export function createCodeBuddyOAuth(
 
   const refresh = async (
     credential: OAuthCredential,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<OAuthCredential> => {
     throwIfAborted(signal);
     const baseUrl = normalizeSiteRoot(credentialString(credential, "baseUrl"));
@@ -2119,4 +2121,3 @@ export function createCodeBuddyProvider(
     },
   };
 }
-

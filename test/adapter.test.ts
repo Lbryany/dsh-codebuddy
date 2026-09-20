@@ -47,7 +47,7 @@ function successfulMessage(): AssistantMessage {
   }
 }
 
-function fakeModels(): Models {
+function fakeModels(doneReason: 'stop' | 'deferred' = 'stop'): Models {
   return {
     refresh: async () => ({ aborted: false, errors: new Map() }),
     getModels: () => [model],
@@ -65,7 +65,7 @@ function fakeModels(): Models {
         stream.push({ type: 'text_start', contentIndex: 0, partial: message })
         stream.push({ type: 'text_delta', contentIndex: 0, delta: 'ok', partial: message })
         stream.push({ type: 'text_end', contentIndex: 0, content: 'ok', partial: message })
-        stream.push({ type: 'done', reason: 'stop', message })
+        stream.push({ type: 'done', reason: doneReason, message })
         stream.end(message)
       })
       return stream
@@ -105,4 +105,19 @@ test('adapter translates pi streaming events and emits usage before finish', asy
     usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0, reasoningTokens: 1 },
   })
   assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })
+})
+
+test('adapter rejects pi deferred-tool completions that DSH cannot consume', async () => {
+  const adapter = new CodeBuddyAdapter(fakeModels('deferred'))
+
+  await assert.rejects(async () => {
+    for await (const _chunk of adapter.stream({
+      provider: 'codebuddy',
+      model: 'reasoner',
+      reasoningEffort: ReasoningEffortId('medium'),
+      messages: [],
+    })) {
+      // Drain the stream so the terminal event is observed.
+    }
+  }, /deferred tool response/)
 })

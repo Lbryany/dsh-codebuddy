@@ -4,8 +4,8 @@ import test from "node:test";
 
 import type {
   AuthEvent,
-  AuthInteraction,
   OAuthCredential,
+  ProviderAuthInteraction,
 } from "@earendil-works/pi-ai";
 import {
   BUSINESS_CODES,
@@ -35,8 +35,8 @@ function jsonResponse(payload: unknown, status = 200): Response {
 function interactionFor(
   answer: string,
   events: AuthEvent[] = [],
-  signal?: AbortSignal,
-): AuthInteraction {
+  signal: AbortSignal = new AbortController().signal,
+): ProviderAuthInteraction {
   return {
     signal,
     async prompt() {
@@ -313,7 +313,7 @@ test("refresh uses refresh headers, no enterprise headers, and preserves account
     accountType: "enterprise",
   };
 
-  const refreshed = await oauth.refresh(original);
+  const refreshed = await oauth.refresh(original, new AbortController().signal);
 
   assert.ok(refreshCall);
   assert.equal(
@@ -468,6 +468,7 @@ test("a successful enterprise refresh replaces the international provider fallba
     },
   });
   let stored: unknown;
+  const signal = new AbortController().signal;
 
   assert.ok(provider.getModels().some(({ id }) => id.startsWith("gemini-")));
   await provider.refreshModels?.({
@@ -477,13 +478,13 @@ test("a successful enterprise refresh replaces the international provider fallba
       domain: "acme.sso.codebuddy.cn",
     },
     allowNetwork: true,
-    store: {
-      read: async () => undefined,
-      write: async (entry: unknown) => {
-        stored = entry;
-      },
+    signal,
+    publish: async (publication) => {
+      stored = publication.persist;
+      publication.update?.();
+      return true;
     },
-  } as never);
+  });
 
   const refreshed = provider.getModels();
   assert.ok(stored);
@@ -599,8 +600,9 @@ function refreshContext(
 ) {
   return {
     credential: OAUTH_CREDENTIAL,
-    store: {} as never,
     allowNetwork: true,
+    signal: new AbortController().signal,
+    publish: async () => true,
     ...overrides,
   } as Parameters<typeof fetchCodeBuddyModels>[0];
 }
