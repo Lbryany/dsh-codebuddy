@@ -1,4 +1,5 @@
-import { Context } from "@deepseek-ai/cordis";
+import z from "@deepseek-ai/schemastery";
+import { Context, Volatile } from "@deepseek-ai/cordis";
 //#region src/contract.d.ts
 declare const PROVIDER = "codebuddy";
 //#endregion
@@ -6,6 +7,13 @@ declare const PROVIDER = "codebuddy";
 declare const name = "llm-codebuddy";
 declare const inject: string[];
 declare const CREDENTIAL_REF: import("@deepseek-ai/dsh-credentials").CredentialRef;
-declare function apply(ctx: Context): void;
+declare const Config: z<Schemastery.ObjectS<NoInfer<{
+  defaultSite: z<string, string, "volatile-defined">;
+}>>, Schemastery.ObjectT<NoInfer<{
+  defaultSite: z<string, string, "volatile-defined">;
+}>>, "plain">;
+declare function apply(ctx: Context, config?: {
+  defaultSite: Volatile<string>;
+}): void;
 //#endregion
-export { CREDENTIAL_REF, PROVIDER, apply, inject, name };
+export { CREDENTIAL_REF, Config, PROVIDER, apply, inject, name };

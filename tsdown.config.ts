@@ -13,6 +13,8 @@ export default defineConfig({
       '@deepseek-ai/dsh-commands',
       '@deepseek-ai/dsh-credentials',
       '@deepseek-ai/dsh-llm',
+      '@deepseek-ai/schemastery',
+      '@deepseek-ai/dsh-client-connection',
       '@earendil-works/pi-ai',
       '@earendil-works/pi-ai/compat',
     ],

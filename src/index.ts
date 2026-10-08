@@ -1,4 +1,9 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/cordis-plugin-loader'
+import z from '@deepseek-ai/schemastery'
+import type { SettingsForms } from '@deepseek-ai/dsh-settings'
+import { createPreferences } from './settings.ts'
+import { createRpcHandler, registerManagement } from './rpc.ts'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createModels } from '@earendil-works/pi-ai'
@@ -13,8 +18,21 @@ export { PROVIDER } from './contract.ts'
 export const name = 'llm-codebuddy'
 export const inject = ['llm', 'commands', 'credentials']
 export const CREDENTIAL_REF = credentialRef('CODEBUDDY_OAUTH')
+export const Config = z.object({ defaultSite: z.string().default(DEFAULT_SITE).volatile() })
 
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, config?: { defaultSite: Volatile<string> }): void {
+  let settings: SettingsForms | undefined
+  const entryId = ctx.fiber.entry?.id
+  const preferences = createPreferences({
+    read: () => config?.defaultSite.get() ?? DEFAULT_SITE,
+    writable: () => Boolean(settings?.writable && entryId),
+    write: async defaultSite => { if (settings && entryId) await settings.update(entryId, { defaultSite }) },
+  })
+  ctx.inject(['settings'], scope => {
+    settings = scope.settings
+    scope.effect(() => scope.settings.configure({ auto: false }, ctx.fiber))
+    scope.effect(() => () => { settings = undefined })
+  })
   const store = new DshCredentialStore(ctx.credentials, CREDENTIAL_REF)
   const models = createModels({ credentials: store })
   const installProvider = () => {
@@ -28,11 +46,14 @@ export function apply(ctx: Context): void {
   installProvider()
   const registration = ctx.llm.registerAdapter([PROVIDER], new CodeBuddyAdapter(models, service.accountSignal))
   ctx.effect(() => () => service.dispose())
+  ctx.inject(['connection'], scope => {
+    scope.effect(() => registerManagement(scope.connection, createRpcHandler({ service, preferences })))
+  })
 
   ctx.commands.register({
     name: 'codebuddy-login', description: '登录 CodeBuddy 并加载可用模型', input: { hint: '[cn|global|site URL]' },
     handler: async ({ rawInput, signal }: CommandInvocation) => {
-      const login = await service.start(rawInput || DEFAULT_SITE, signal)
+      const login = await service.start(rawInput || preferences.status().defaultSite, signal)
       return { kind: 'success', text: authorizationUrlText(login.authorizationUrl, login.reused) }
     },
   })
