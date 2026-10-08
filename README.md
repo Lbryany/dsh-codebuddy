@@ -2,7 +2,7 @@
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的 CodeBuddy 插件：提供 OAuth 登录、账号动态模型目录、流式请求以及推理等级选择。
 
-本分支面向 **DSH 0.2.0 系列**，已验收的准确版本为 **0.2.0-rc.2**，SDK 依赖固定到该版本。正式 `0.2.0` 发布后需要复验；本分支不承诺兼容 `0.1.x`。这次改造尚未发布到远程仓库，请用本地源码构建的安装包验收。
+本分支面向 **DSH 0.2.0 系列**，已验收的准确版本为 **0.2.0-rc.2**，SDK 依赖固定到该版本。正式 `0.2.0` 发布后需要复验；本分支不承诺兼容 `0.1.x`。插件从 `0.1.4` 起包含本次设置与接入改造。
 
 ## 功能
 
@@ -70,7 +70,7 @@ cd dsh-codebuddy
 npm ci
 npm run check
 npm pack --ignore-scripts
-dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.3.tgz
+dsh plugin --profile web add ./lbryany-dsh-codebuddy-0.1.4.tgz
 dsh web
 ```
 

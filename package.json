@@ -1,6 +1,6 @@
 {
   "name": "@lbryany/dsh-codebuddy",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "CodeBuddy OAuth, dynamic models, and reasoning controls for DeepSeek Harness",
   "keywords": [
     "dsh-plugin",

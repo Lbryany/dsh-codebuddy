@@ -98,7 +98,8 @@ async function ensureProfile(name) {
     const workspace = join(dir, 'pnpm-workspace.yaml')
     await writeFile(workspace, 'packages:\n  - .\nnodeLinker: hoisted\nautoInstallPeers: false\nallowBuilds:\n  "@google/genai": false\n  protobufjs: false\n')
     await runCli(['plugin', '--profile', name, 'remove', '@lbryany/dsh-codebuddy'])
-    const result = await runCli(['plugin', '--profile', name, 'add', join(root, '.tmp/lbryany-dsh-codebuddy-0.1.3.tgz')])
+    const packageVersion = JSON.parse(await readFile(join(root, 'package.json'))).version
+    const result = await runCli(['plugin', '--profile', name, 'add', join(root, `.tmp/lbryany-dsh-codebuddy-${packageVersion}.tgz`)])
     assert.equal(result.code, 0, result.log)
     assert.equal(await readFile(join(dir, 'node_modules/@lbryany/dsh-codebuddy/lib/index.mjs'), 'utf8'), local, 'Rebuild and npm pack before verification')
   }
