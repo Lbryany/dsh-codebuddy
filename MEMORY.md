@@ -21,3 +21,10 @@
 - 原生 Button/Input、主题继承、zh/en locale；非推理模型隐藏推理下拉。
 - 实际宿主发现 settings namespace 使用 entry.options.id，已修复并通过持久化验收。
 - npm run check：55 项测试、类型检查与双入口构建通过。
+
+### Step 6 — 2026-10-08
+- npm pack 本地产物经官方 DSH 0.2.0-rc.2 plugin add 安装到隔离 profile。scripts/verify-dsh.mjs 提供 web/commands 两种可复现入口。
+- Web：原生zh/en设置页、默认站点保存、模拟OAuth成功/取消、目录失败缓存、默认模型和max档保存、进程重启后配置/凭据恢复、退出、401/403认证来源校验通过。
+- Commands：独立DSH_HOME、无Connection/Web服务，真实Commands/Agents/Llm运行登录/状态/退出和本地模拟流式completion通过。
+- 截图已目视检查，生成日志位于.tmp/verification-artifacts。真实账号和Windows原生桌面客户端未实测；正式0.2.0需复验。
+- 未更新用户全局DSH，未改用户原有profile；未推送或发布。详见docs/verification-0.2.0.md。
