@@ -57,3 +57,28 @@ test('logout prevents a delayed token refresh from writing its credential back',
   await logout
   assert.equal(await store.read('codebuddy'), undefined)
 })
+
+test('cancelling a queued OAuth write cannot persist the cancelled credential', async () => {
+  const credentials = new FakeCredentials()
+  const store = new DshCredentialStore(credentials as unknown as CredentialProvider, credentialRef('CODEBUDDY_OAUTH'))
+  let finish!: () => void
+  const gate = new Promise<void>(resolve => { finish = resolve })
+  const first = store.modify('codebuddy', async () => { await gate; return undefined })
+  const abort = new AbortController()
+  const queued = store.modify('codebuddy', async () => ({ type: 'oauth', access: 'cancelled', refresh: 'r', expires: 123 }), { signal: abort.signal })
+  const rejected = assert.rejects(queued, /abort/i)
+  abort.abort()
+  finish()
+  await first
+  await rejected
+  assert.equal(credentials.value, undefined)
+})
+
+test('cancellation during the host write restores the previous credential before releasing the queue', async () => {
+  const credentials = new FakeCredentials()
+  const abort = new AbortController()
+  credentials.set = async (_ref, value) => { credentials.value = value; abort.abort() }
+  const store = new DshCredentialStore(credentials as unknown as CredentialProvider, credentialRef('CODEBUDDY_OAUTH'))
+  await assert.rejects(store.modify('codebuddy', async () => ({ type: 'oauth', access: 'cancelled', refresh: 'r', expires: 123 }), { signal: abort.signal }), /abort/i)
+  assert.equal(credentials.value, undefined)
+})

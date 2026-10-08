@@ -11,7 +11,7 @@ function fixture(noop = false) {
   } }
   const service = createDefaultModel({ host: () => ({ currentSelection: () => selected,
     async saveSelection(next) { if (!noop) selected = { ...next, reasoningEffort: next.reasoningEffort! } },
-  }), account: { status: async () => view, revision: 0, accountSignal: () => new AbortController().signal } })
+  }), account: { status: async () => view, revision: 0, accountSignal: () => new AbortController().signal, withAccount: action => action() } })
   return { service, view }
 }
 test('default selection changes only on explicit save and preserves reasoning for the same model', async () => {

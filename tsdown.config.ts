@@ -22,7 +22,7 @@ export default defineConfig([{
 }, {
   entry: { client: 'src/client.tsx' }, outDir: 'lib', format: 'cjs', platform: 'browser',
   target: 'es2022', dts: false, clean: false,
-  deps: { neverBundle: ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/cordis'] },
+  deps: { neverBundle: ['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-primitives'] },
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   outputOptions: {
     entryFileNames: 'client.js',

@@ -31,14 +31,29 @@ export class DshCredentialStore implements CredentialStore {
   modify(
     providerId: string,
     fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+    options?: { signal?: AbortSignal },
   ): Promise<Credential | undefined> {
     if (providerId !== 'codebuddy') return Promise.resolve(undefined)
     const generation = this.generation
     const operation = this.chain.then(async () => {
+      options?.signal?.throwIfAborted()
       if (generation !== this.generation) throw new Error('CodeBuddy account changed')
-      const next = await fn(await this.read(providerId))
+      const current = await this.read(providerId)
+      options?.signal?.throwIfAborted()
       if (generation !== this.generation) throw new Error('CodeBuddy account changed')
-      if (next !== undefined) await this.credentials.set(this.ref, JSON.stringify(next))
+      const next = await fn(current)
+      options?.signal?.throwIfAborted()
+      if (generation !== this.generation) throw new Error('CodeBuddy account changed')
+      if (next !== undefined) {
+        await this.credentials.set(this.ref, JSON.stringify(next))
+        // The host store has no cancellable write. Restore the prior value before
+        // releasing the queue when cancellation arrives during that write.
+        if (options?.signal?.aborted) {
+          if (current === undefined) await this.credentials.unset(this.ref)
+          else await this.credentials.set(this.ref, JSON.stringify(current))
+          options.signal.throwIfAborted()
+        }
+      }
       return next
     })
     this.chain = operation.catch(() => undefined)

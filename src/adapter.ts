@@ -24,7 +24,7 @@ import type {
   Tool,
 } from '@earendil-works/pi-ai'
 
-const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+import { REASONING_LEVELS as LEVELS } from './contract.ts'
 type Level = (typeof LEVELS)[number]
 
 const EFFORTS = LEVELS.map(level => ({
@@ -115,11 +115,14 @@ function finishReason(reason: 'stop' | 'length' | 'toolUse'): StreamChunk & { ty
 export class CodeBuddyAdapter extends LlmAdapter {
   private readonly models: Models
   private readonly accountSignal: () => AbortSignal
+  private readonly refresh: Models['refresh']
 
-  constructor(models: Models, accountSignal: () => AbortSignal = () => new AbortController().signal) {
+  constructor(models: Models, accountSignal: () => AbortSignal = () => new AbortController().signal,
+    refresh: Models['refresh'] = options => models.refresh(options)) {
     super()
     this.models = models
     this.accountSignal = accountSignal
+    this.refresh = refresh
   }
 
   override async prepareCall(provider: string, id: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
@@ -140,12 +143,19 @@ export class CodeBuddyAdapter extends LlmAdapter {
   }
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    await this.models.refresh({ allowNetwork: true })
+    const signal = this.accountSignal()
+    signal.throwIfAborted()
+    await this.refresh({ allowNetwork: true, signal })
+    signal.throwIfAborted()
     return this.models.getModels('codebuddy').map(model => modelInfo(provider, model))
   }
 
   override async resolveModel(provider: string, id: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    await this.models.refresh({ allowNetwork: true, signal })
+    const account = this.accountSignal()
+    const combined = signal ? AbortSignal.any([signal, account]) : account
+    combined.throwIfAborted()
+    await this.refresh({ allowNetwork: true, signal: combined })
+    combined.throwIfAborted()
     const model = this.models.getModel('codebuddy', id)
     if (model === undefined) return { provider, id, name: id, inputModalities: ['text'] }
     return {
@@ -161,7 +171,7 @@ export class CodeBuddyAdapter extends LlmAdapter {
     const signal = options.signal ? AbortSignal.any([options.signal, account]) : account
     signal.throwIfAborted()
     if (options.stop?.length) throw new LlmError('CodeBuddy adapter does not support stop sequences', 'UNSUPPORTED')
-    await this.models.refresh({ allowNetwork: true, signal })
+    await this.refresh({ allowNetwork: true, signal })
     signal.throwIfAborted()
     const model = this.models.getModel('codebuddy', options.model)
     if (model === undefined) throw new LlmError(`CodeBuddy model "${options.model}" is not available`, 'MODEL_NOT_FOUND')

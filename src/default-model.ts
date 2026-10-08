@@ -7,7 +7,7 @@ interface DefaultModelHost {
 }
 export function createDefaultModel(options: {
   host(): DefaultModelHost | undefined
-  account: { status(): Promise<StatusView>; readonly revision: number; accountSignal(): AbortSignal }
+  account: { status(): Promise<StatusView>; readonly revision: number; accountSignal(): AbortSignal; withAccount<T>(action: () => Promise<T>): Promise<T> }
 }) {
   let saves: Promise<unknown> = Promise.resolve()
   const status = (): DefaultModelView => {
@@ -18,7 +18,7 @@ export function createDefaultModel(options: {
     status,
     select(input: { model: string; reasoningEffort?: string }): Promise<DefaultModelView> {
       const revision = options.account.revision
-      const save = saves.then(async () => {
+      const save = saves.then(() => options.account.withAccount(async () => {
         const host = options.host()
         if (!host) throw new PublicError('unavailable', 'DSH 默认模型服务不可用。')
         const current = await options.account.status()
@@ -41,7 +41,7 @@ export function createDefaultModel(options: {
           throw new PublicError('not-saved', 'DSH 默认模型未能保存，请检查配置权限。')
         }
         return status()
-      })
+      }))
       saves = save.catch(() => {})
       return save
     },

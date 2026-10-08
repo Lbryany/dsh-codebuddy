@@ -9,6 +9,7 @@ export interface ClientState {
   preferences?: PreferencesView
   defaultModel?: DefaultModelView
   busy: boolean
+  pendingAction?: string
   error?: string
 }
 
@@ -61,12 +62,12 @@ export function createClientState(transport: Transport) {
       clearTimeout(timer)
       const revision = ++version
       const signal = lifetime.signal
-      publish({ ...state, busy: true, error: undefined })
+      publish({ ...state, busy: true, pendingAction: endpoint, error: undefined })
       let failure: string | undefined
       try { await call(endpoint, payload, signal) }
       catch (error) { failure = error instanceof Error ? error.message : 'CodeBuddy 操作失败。' }
       if (disposed || revision !== version || signal.aborted) return
-      publish({ ...state, busy: false })
+      publish({ ...state, busy: false, pendingAction: undefined })
       await load()
       if (failure && !disposed && revision === version) publish({ ...state, error: failure })
     },

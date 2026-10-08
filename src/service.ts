@@ -35,6 +35,16 @@ export class CodeBuddyService {
   get revision(): number { return this.epoch }
   accountSignal = (): AbortSignal => this.account.signal
 
+  withAccount<T>(action: () => Promise<T>): Promise<T> {
+    const epoch = this.epoch
+    return this.serialize(async () => {
+      this.assertActive()
+      if (epoch !== this.epoch) throw new PublicError('account-changed', 'CodeBuddy 账号状态已变化，请重试。')
+      this.account.signal.throwIfAborted()
+      return action()
+    })
+  }
+
   observeCatalogSource(source: string, epoch: number): void {
     if (epoch !== this.epoch || this.disposed) return
     this.source = source
@@ -54,8 +64,8 @@ export class CodeBuddyService {
     }
   }
 
-  start(site: string, signal: AbortSignal) {
-    return this.serialize(async () => {
+  async start(site: string, signal: AbortSignal) {
+    const { pending, epoch } = await this.serialize(async () => {
       this.assertActive()
       const normalized = normalizeSite(site)
       if (this.login.pending()?.site !== normalized) {
@@ -64,18 +74,23 @@ export class CodeBuddyService {
         signal.throwIfAborted()
         this.invalidate()
       }
-      try {
-        const started = await this.login.start(normalized, signal)
-        const epoch = this.epoch
-        void started.completion.then(() => {
-          if (!this.disposed && this.epoch === epoch) this.account = new AbortController()
-        })
-        return started
-      } catch (error) {
-        if (!this.disposed) this.account = new AbortController()
-        throw error
-      }
+      const pending = this.login.start(normalized, signal)
+      void pending.catch(() => {})
+      return { pending, epoch: this.epoch }
     })
+    try {
+      const started = await pending
+      void started.completion.then(() => {
+        if (!this.disposed && this.epoch === epoch) {
+          this.account = new AbortController()
+          this.options.registration.replace([PROVIDER])
+        }
+      })
+      return started
+    } catch (error) {
+      if (!this.disposed && this.epoch === epoch && !this.login.pending()) this.account = new AbortController()
+      throw error
+    }
   }
 
   cancel(id?: string): Promise<void> {
@@ -133,7 +148,7 @@ export class CodeBuddyService {
     return next
   }
 
-  private refreshModels(input: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> {
+  refreshModels = (input: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> => {
     if (this.refreshTask?.epoch === this.epoch) return this.refreshTask.promise
     const epoch = this.epoch
     this.catalog = { ...this.catalog, status: 'refreshing', error: undefined }
@@ -145,11 +160,12 @@ export class CodeBuddyService {
       if (result.aborted || input.signal?.aborted || result.errors.has(PROVIDER)) {
         this.catalog = { ...this.catalog, status: 'error', cached: this.catalog.models.length > 0, error: 'models-unavailable' }
       } else {
-        this.catalog = { status: 'ready', cached: false, source: this.source, updatedAt: Date.now(),
-          models: this.models.getModels(PROVIDER).map(model => ({
+        const models = this.models.getModels(PROVIDER).map(model => ({
             id: model.id, name: model.name, reasoning: model.reasoning, contextWindow: model.contextWindow,
-          })) }
-        this.options.registration.replace([PROVIDER])
+          }))
+        const changed = JSON.stringify(models) !== JSON.stringify(this.catalog.models)
+        this.catalog = { status: 'ready', cached: false, source: this.source, updatedAt: Date.now(), models }
+        if (changed) this.options.registration.replace([PROVIDER])
       }
       return result
     }).finally(() => { if (this.refreshTask === task) this.refreshTask = undefined }) }

@@ -24,7 +24,7 @@ export const Config = z.object({ defaultSite: z.string().default(DEFAULT_SITE).v
 
 export function apply(ctx: Context, config?: { defaultSite: Volatile<string> }): void {
   let settings: SettingsForms | undefined
-  const entryId = ctx.fiber.entry?.id
+  const entryId = ctx.fiber.entry?.options.id
   const preferences = createPreferences({
     read: () => config?.defaultSite.get() ?? DEFAULT_SITE,
     writable: () => Boolean(settings?.writable && entryId),
@@ -46,7 +46,7 @@ export function apply(ctx: Context, config?: { defaultSite: Volatile<string> }):
   const service = new CodeBuddyService({ models, store, logger: ctx.logger,
     registration: { replace: providers => registration.replace(providers) }, resetProvider: installProvider })
   installProvider()
-  const registration = ctx.llm.registerAdapter([PROVIDER], new CodeBuddyAdapter(models, service.accountSignal))
+  const registration = ctx.llm.registerAdapter([PROVIDER], new CodeBuddyAdapter(models, service.accountSignal, service.refreshModels))
   ctx.effect(() => () => service.dispose())
   let defaultHost: AgentDefaultModelConfig | undefined
   const defaultModel = createDefaultModel({ host: () => defaultHost, account: service })
