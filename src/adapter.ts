@@ -9,12 +9,14 @@ import {
   type LlmModelInfo,
   type LlmProviderInfo,
   type LlmResolvedModelInfo,
+  type PreparedAdapterCall,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type {
   AssistantMessage,
   Api,
   Context as PiContext,
+  JsonObject,
   Credential,
   Model,
   Models,
@@ -45,7 +47,6 @@ function modelInfo(provider: string, model: Model<Api>): LlmModelInfo {
 function textFrom(blocks: readonly ContentBlock[]): string {
   return blocks.flatMap(block => {
     if (block.type === 'text' || block.type === 'reasoning') return [block.text]
-    if (block.type === 'tool-result') return [textFrom(block.content)]
     return []
   }).join('\n')
 }
@@ -54,21 +55,17 @@ function toPiContext(options: GenerateOptions): PiContext {
   const messages: PiContext['messages'] = []
   const toolNames = new Map<string, string>()
   for (const message of options.messages) {
+    if (message.role === 'tool') {
+      messages.push({
+        role: 'toolResult', toolCallId: String(message.toolCallId),
+        toolName: toolNames.get(String(message.toolCallId)) ?? '',
+        content: [{ type: 'text', text: textFrom(message.content) }],
+        isError: message.isError ?? false, timestamp: Date.now(),
+      })
+      continue
+    }
     if (message.role === 'user') {
-      for (const block of message.content) {
-        if (block.type === 'tool-result') {
-          messages.push({
-            role: 'toolResult',
-            toolCallId: String(block.toolCallId),
-            toolName: toolNames.get(String(block.toolCallId)) ?? '',
-            content: [{ type: 'text', text: textFrom(block.content) }],
-            isError: block.isError ?? false,
-            timestamp: Date.now(),
-          })
-        }
-      }
       const text = message.content
-        .filter(block => block.type !== 'tool-result')
         .flatMap(block => block.type === 'text' || block.type === 'reasoning' ? [block.text] : [])
         .join('\n')
       if (text.length > 0) messages.push({ role: 'user', content: text, timestamp: Date.now() })
@@ -80,8 +77,8 @@ function toPiContext(options: GenerateOptions): PiContext {
         if (block.type === 'text') content.push({ type: 'text', text: block.text })
         if (block.type === 'reasoning') content.push({ type: 'thinking', thinking: block.text })
         if (block.type === 'tool-call') {
-          let args: Record<string, unknown> = {}
-          try { args = JSON.parse(block.arguments) as Record<string, unknown> } catch {}
+          let args: JsonObject = {}
+          try { args = JSON.parse(block.arguments) as JsonObject } catch {}
           content.push({ type: 'toolCall', id: String(block.id), name: block.name, arguments: args })
           toolNames.set(String(block.id), block.name)
         }
@@ -110,10 +107,25 @@ function finishReason(reason: 'stop' | 'length' | 'toolUse'): StreamChunk & { ty
 
 export class CodeBuddyAdapter extends LlmAdapter {
   private readonly models: Models
+  private readonly accountSignal: () => AbortSignal
 
-  constructor(models: Models) {
+  constructor(models: Models, accountSignal: () => AbortSignal = () => new AbortController().signal) {
     super()
     this.models = models
+    this.accountSignal = accountSignal
+  }
+
+  override async prepareCall(provider: string, id: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
+    const account = this.accountSignal()
+    const combined = signal ? AbortSignal.any([signal, account]) : account
+    combined.throwIfAborted()
+    const model = await this.resolveModel(provider, id, combined)
+    combined.throwIfAborted()
+    return {
+      model,
+      stream: options => this.stream({ ...options, signal: options.signal
+        ? AbortSignal.any([options.signal, combined]) : combined }),
+    }
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
@@ -138,8 +150,12 @@ export class CodeBuddyAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const account = this.accountSignal()
+    const signal = options.signal ? AbortSignal.any([options.signal, account]) : account
+    signal.throwIfAborted()
     if (options.stop?.length) throw new LlmError('CodeBuddy adapter does not support stop sequences', 'UNSUPPORTED')
-    await this.models.refresh({ allowNetwork: true, signal: options.signal })
+    await this.models.refresh({ allowNetwork: true, signal })
+    signal.throwIfAborted()
     const model = this.models.getModel('codebuddy', options.model)
     if (model === undefined) throw new LlmError(`CodeBuddy model "${options.model}" is not available`, 'MODEL_NOT_FOUND')
 
@@ -148,7 +164,7 @@ export class CodeBuddyAdapter extends LlmAdapter {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       reasoning: options.reasoningEffort as ThinkingLevel | undefined,
-      signal: options.signal,
+      signal,
       sessionId: options.sessionId === undefined ? undefined : String(options.sessionId),
       headers: {
         // Preserve CodeBuddy's required CLI identity while satisfying dsh's
@@ -157,6 +173,7 @@ export class CodeBuddyAdapter extends LlmAdapter {
       },
     })
     for await (const event of stream) {
+      signal.throwIfAborted()
       if (event.type === 'text_start') {
         open.set(event.contentIndex, { kind: 'text', text: '' })
         yield { type: 'block-start', index: event.contentIndex, blockType: 'text' }
