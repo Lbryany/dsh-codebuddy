@@ -2,6 +2,8 @@ import type { Context, Volatile } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import type { SettingsForms } from '@deepseek-ai/dsh-settings'
+import type { AgentDefaultModelConfig } from '@deepseek-ai/dsh-agent-default-model'
+import { createDefaultModel } from './default-model.ts'
 import { createPreferences } from './settings.ts'
 import { createRpcHandler, registerManagement } from './rpc.ts'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
@@ -46,8 +48,14 @@ export function apply(ctx: Context, config?: { defaultSite: Volatile<string> }):
   installProvider()
   const registration = ctx.llm.registerAdapter([PROVIDER], new CodeBuddyAdapter(models, service.accountSignal))
   ctx.effect(() => () => service.dispose())
+  let defaultHost: AgentDefaultModelConfig | undefined
+  const defaultModel = createDefaultModel({ host: () => defaultHost, account: service })
+  ctx.inject(['agentDefaultModel'], scope => {
+    defaultHost = scope.agentDefaultModel
+    scope.effect(() => () => { defaultHost = undefined })
+  })
   ctx.inject(['connection'], scope => {
-    scope.effect(() => registerManagement(scope.connection, createRpcHandler({ service, preferences })))
+    scope.effect(() => registerManagement(scope.connection, createRpcHandler({ service, preferences, defaultModel })))
   })
 
   ctx.commands.register({

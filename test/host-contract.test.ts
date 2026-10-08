@@ -53,12 +53,14 @@ test('DSH 0.2 tool-role results retain call identity and failure state on the wi
   const adapter = new CodeBuddyAdapter(models)
   const callId = ToolCallId('call-1')
   for await (const _ of adapter.stream({ provider: 'codebuddy', model: 'example', messages: [
+    createMessage({ role: 'system', source: { kind: 'system-prompt' }, content: [{ type: 'text', text: 'Preserve the session instructions' }] }),
     createMessage({ role: 'assistant', source: { kind: 'model', provider: 'codebuddy', model: 'example' },
       content: [{ type: 'tool-call', id: callId, name: 'read_file', arguments: '{"path":"a.txt"}' }] }),
     createMessage({ role: 'tool', source: { kind: 'tool', callId }, toolCallId: callId, isError: true,
       content: [{ type: 'text', text: 'Not found' }] }),
   ] })) {}
   const result = sent?.messages[1]
+  assert.equal(sent?.systemPrompt, 'Preserve the session instructions')
   assert.equal(result?.role, 'toolResult')
   if (result?.role !== 'toolResult') throw Error('Missing tool result')
   assert.equal(result.toolCallId, 'call-1')

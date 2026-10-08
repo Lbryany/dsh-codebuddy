@@ -54,7 +54,14 @@ function textFrom(blocks: readonly ContentBlock[]): string {
 function toPiContext(options: GenerateOptions): PiContext {
   const messages: PiContext['messages'] = []
   const toolNames = new Map<string, string>()
-  for (const message of options.messages) {
+  const leadingSystem = options.system === undefined && options.messages[0]?.role === 'system'
+  const systemPrompt = leadingSystem ? textFrom(options.messages[0]!.content) || undefined : options.system
+  for (const message of leadingSystem ? options.messages.slice(1) : options.messages) {
+    if (message.role === 'developer') throw new LlmError('CodeBuddy does not support developer messages', 'UNSUPPORTED_CONTENT')
+    if (message.role === 'system') {
+      messages.push({ role: 'user', content: textFrom(message.content), timestamp: Date.now() })
+      continue
+    }
     if (message.role === 'tool') {
       messages.push({
         role: 'toolResult', toolCallId: String(message.toolCallId),
@@ -96,7 +103,7 @@ function toPiContext(options: GenerateOptions): PiContext {
     description: tool.description,
     parameters: tool.parameters,
   })) as Tool[] | undefined
-  return { systemPrompt: options.system, messages, tools }
+  return { systemPrompt, messages, tools }
 }
 
 function finishReason(reason: 'stop' | 'length' | 'toolUse'): StreamChunk & { type: 'finish' } {

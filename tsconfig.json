@@ -7,8 +7,16 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "verbatimModuleSyntax": true
+    "types": [
+      "node"
+    ],
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx"
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "tsdown.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "tsdown.config.ts",
+    "src/**/*.tsx"
+  ]
 }
