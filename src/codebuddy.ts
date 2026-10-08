@@ -720,6 +720,8 @@ type FetchLike = (
 type Sleep = (milliseconds: number, signal?: AbortSignal) => Promise<void>;
 
 export interface CodeBuddyRuntimeOptions {
+  /** Receives the actual source of a successfully discovered catalog. */
+  onCatalogSource?: (source: string) => void;
   fetch?: FetchLike;
   now?: () => number;
   sleep?: Sleep;
@@ -743,6 +745,7 @@ export interface CodeBuddyRuntimeOptions {
 }
 
 interface Runtime {
+  onCatalogSource?: (source: string) => void;
   fetch: FetchLike;
   now: () => number;
   sleep: Sleep;
@@ -798,6 +801,7 @@ const defaultSleep: Sleep = (milliseconds, signal) =>
 
 function makeRuntime(options: CodeBuddyRuntimeOptions = {}): Runtime {
   return {
+    onCatalogSource: options.onCatalogSource,
     fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
     now: options.now ?? Date.now,
     sleep: options.sleep ?? defaultSleep,
@@ -846,6 +850,9 @@ function emitDiagnostic(
   event: string,
   details: DiagnosticDetails,
 ): void {
+  if ((event === "models.refresh.success" || event === "models.enterprise.success") && typeof details.source === "string") {
+    runtime.onCatalogSource?.(details.source);
+  }
   try {
     runtime.debug?.(event, sanitizeDiagnosticValue(details) as DiagnosticDetails);
   } catch {

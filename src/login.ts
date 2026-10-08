@@ -1,4 +1,6 @@
 import type { AuthInteraction, Credential, Models } from '@earendil-works/pi-ai'
+import { randomUUID } from 'node:crypto'
+import { PublicError, type LoginView } from './contract.ts'
 
 export interface LoginRegistration {
   replace(providers: string[]): void
@@ -21,15 +23,12 @@ export interface PendingLogin {
 }
 
 interface ActiveLogin extends PendingLogin {
+  loginId: string
   authorizationUrlPromise: Promise<string>
   completion: Promise<void>
   controller: AbortController
   rejectAuthorizationUrl(error: unknown): void
   resolveAuthorizationUrl(url: string): void
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function abortError(signal: AbortSignal): Error {
@@ -63,6 +62,7 @@ function waitWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
 
 export class CodeBuddyLoginManager {
   private active?: ActiveLogin
+  private view: LoginView = { phase: 'idle' }
   private readonly logger: LoginLogger
   private readonly models: Pick<Models, 'getModels' | 'login' | 'refresh'>
   private readonly provider: string
@@ -88,7 +88,14 @@ export class CodeBuddyLoginManager {
     }
   }
 
+  snapshot(id?: string): LoginView {
+    if (id !== undefined && id !== this.view.loginId) throw new PublicError('not-found', '登录任务已失效。')
+    return { ...this.view }
+  }
+
   async start(site: string, signal: AbortSignal): Promise<LoginStart> {
+    signal.throwIfAborted()
+    if (this.active && this.active.site !== site) await this.cancel()
     const reused = this.active !== undefined
     const active = this.active ?? this.create(site)
 
@@ -102,12 +109,15 @@ export class CodeBuddyLoginManager {
     }
   }
 
-  async cancel(): Promise<void> {
+  async cancel(id?: string): Promise<void> {
+    if (id !== undefined) this.snapshot(id)
     const active = this.active
     if (active === undefined) return
     active.controller.abort(new Error('CodeBuddy 登录已取消'))
     await active.completion
   }
+
+  reset(): void { this.view = { phase: 'idle' } }
 
   private create(site: string): ActiveLogin {
     const controller = new AbortController()
@@ -123,6 +133,7 @@ export class CodeBuddyLoginManager {
     void authorizationUrlPromise.catch(() => {})
 
     const active: ActiveLogin = {
+      loginId: randomUUID(),
       authorizationUrlPromise,
       completion: Promise.resolve(),
       controller,
@@ -131,15 +142,19 @@ export class CodeBuddyLoginManager {
       site,
     }
     this.active = active
+    this.view = { phase: 'starting', loginId: active.loginId, site, startedAt: Date.now() }
 
     const interaction: AuthInteraction = {
       signal: controller.signal,
       prompt: async () => site,
       notify: (event) => {
         if (event.type !== 'auth_url' || active.authorizationUrl !== undefined) return
+        const url = new URL(event.url)
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid authorization URL')
         active.authorizationUrl = event.url
+        this.view = { ...this.view, phase: 'waiting_browser', authorizationUrl: event.url }
         active.resolveAuthorizationUrl(event.url)
-        this.logger.info('CodeBuddy authorization URL: %s', event.url)
+        this.logger.info('CodeBuddy waiting for browser authorization')
       },
     }
 
@@ -150,17 +165,19 @@ export class CodeBuddyLoginManager {
   private async complete(active: ActiveLogin, interaction: AuthInteraction): Promise<void> {
     try {
       const credential: Credential = await this.models.login(this.provider, 'oauth', interaction)
+      active.controller.signal.throwIfAborted()
       if (active.authorizationUrl === undefined) {
         throw new Error('CodeBuddy 登录未返回授权 URL')
       }
 
-      const refresh = await this.models.refresh({
-        allowNetwork: true,
-        force: true,
-        signal: active.controller.signal,
-      })
-      const refreshError = refresh.errors.get(this.provider)
-      if (refreshError !== undefined) throw refreshError
+      this.view = { ...this.view, phase: 'authenticated', authorizationUrl: undefined }
+      try {
+        const refresh = await this.models.refresh({ allowNetwork: true, force: true, signal: active.controller.signal })
+        if (refresh.errors.has(this.provider)) this.view.warning = 'models-unavailable'
+      } catch {
+        this.view.warning = 'models-unavailable'
+      }
+      active.controller.signal.throwIfAborted()
 
       this.registration.replace([this.provider])
       const available = this.models.getModels(this.provider)
@@ -171,11 +188,13 @@ export class CodeBuddyLoginManager {
         available.length,
       )
     } catch (error) {
-      if (active.authorizationUrl === undefined) active.rejectAuthorizationUrl(error)
+      if (active.authorizationUrl === undefined) active.rejectAuthorizationUrl(new PublicError('login-failed', 'CodeBuddy 登录失败，请重试。'))
       if (active.controller.signal.aborted) {
+        this.view = { ...this.view, phase: 'cancelled', authorizationUrl: undefined }
         this.logger.info('CodeBuddy login cancelled')
       } else {
-        this.logger.error('CodeBuddy login failed: %s', errorMessage(error))
+        this.view = { ...this.view, phase: 'failed', authorizationUrl: undefined, error: 'login-failed' }
+        this.logger.error('CodeBuddy login failed')
       }
     } finally {
       if (this.active === active) this.active = undefined

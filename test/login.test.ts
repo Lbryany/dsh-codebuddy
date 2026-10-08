@@ -139,3 +139,33 @@ test('authorization result tells headless users to open the URL themselves', () 
   assert.match(text, /https:\/\/auth\.example\/click-me/)
   assert.match(text, /codebuddy-status/)
 })
+
+test('successful authorization survives a model refresh failure and exposes a warning', async () => {
+  const models = {
+    async login(_p: string, _t: string, interaction: AuthInteraction) {
+      interaction.notify({ type: 'auth_url', url: 'https://auth.example/start' })
+      return credential
+    },
+    refresh: async () => ({ aborted: false, errors: new Map([['codebuddy', new Error('network secret')]]) }),
+    getModels: () => [],
+  } as unknown as Pick<Models, 'getModels' | 'login' | 'refresh'>
+  const manager = new CodeBuddyLoginManager(models, { replace() {} }, { info() {}, error() {} }, 'codebuddy')
+  const login = await manager.start('https://www.codebuddy.ai', new AbortController().signal)
+  await login.completion
+  assert.equal(manager.snapshot().phase, 'authenticated')
+  assert.equal(manager.snapshot().warning, 'models-unavailable')
+  assert.equal(manager.snapshot().authorizationUrl, undefined)
+  assert.doesNotMatch(JSON.stringify(manager.snapshot()), /secret|access|refreshToken/)
+})
+
+test('failed login remains readable after the background task ends', async () => {
+  const models = {
+    async login() { throw new Error('Bearer secret-token') },
+    refresh: async () => ({ aborted: false, errors: new Map() }), getModels: () => [],
+  } as unknown as Pick<Models, 'getModels' | 'login' | 'refresh'>
+  const manager = new CodeBuddyLoginManager(models, { replace() {} }, { info() {}, error() {} }, 'codebuddy')
+  await assert.rejects(manager.start('https://www.codebuddy.ai', new AbortController().signal))
+  assert.equal(manager.snapshot().phase, 'failed')
+  assert.equal(manager.snapshot().error, 'login-failed')
+  assert.doesNotMatch(JSON.stringify(manager.snapshot()), /secret-token/)
+})

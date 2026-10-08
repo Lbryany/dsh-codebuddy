@@ -2,6 +2,7 @@ import type { Credential, CredentialInfo, CredentialStore } from '@earendil-work
 import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 
 export class DshCredentialStore implements CredentialStore {
+  private generation = 0
   private chain: Promise<unknown> = Promise.resolve()
   private readonly credentials: CredentialProvider
   private readonly ref: CredentialRef
@@ -32,8 +33,11 @@ export class DshCredentialStore implements CredentialStore {
     fn: (current: Credential | undefined) => Promise<Credential | undefined>,
   ): Promise<Credential | undefined> {
     if (providerId !== 'codebuddy') return Promise.resolve(undefined)
+    const generation = this.generation
     const operation = this.chain.then(async () => {
+      if (generation !== this.generation) throw new Error('CodeBuddy account changed')
       const next = await fn(await this.read(providerId))
+      if (generation !== this.generation) throw new Error('CodeBuddy account changed')
       if (next !== undefined) await this.credentials.set(this.ref, JSON.stringify(next))
       return next
     })
@@ -43,8 +47,11 @@ export class DshCredentialStore implements CredentialStore {
 
   async delete(providerId: string): Promise<void> {
     if (providerId !== 'codebuddy') return
+    this.invalidate()
     const operation = this.chain.then(() => this.credentials.unset(this.ref))
     this.chain = operation.catch(() => undefined)
     await operation
   }
+
+  invalidate(): void { this.generation++ }
 }

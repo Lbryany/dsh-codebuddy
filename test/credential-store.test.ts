@@ -37,3 +37,23 @@ test('dsh credential store rejects malformed stored JSON without echoing it', as
   )
   await assert.rejects(store.read('codebuddy'), /invalid JSON/)
 })
+
+test('logout prevents a delayed token refresh from writing its credential back', async () => {
+  const credentials = new FakeCredentials()
+  const store = new DshCredentialStore(credentials as unknown as CredentialProvider, credentialRef('CODEBUDDY_OAUTH'))
+  let finish!: () => void
+  let began!: () => void
+  const started = new Promise<void>(resolve => { began = resolve })
+  const refresh = store.modify('codebuddy', async () => {
+    began()
+    await new Promise<void>(resolve => { finish = resolve })
+    return { type: 'oauth', access: 'late', refresh: 'late', expires: 123 }
+  })
+  await started
+  const rejected = assert.rejects(refresh, /account changed/)
+  const logout = store.delete('codebuddy')
+  finish()
+  await rejected
+  await logout
+  assert.equal(await store.read('codebuddy'), undefined)
+})
